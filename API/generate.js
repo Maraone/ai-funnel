@@ -1,31 +1,47 @@
-// This code runs on the server, NOT the user's browser. 
-// Your API key is safe here.
-
+// api/generate.js
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
-    return res.status(405).json({ error: 'Method not allowed' });
+    return res.status(405).json({ message: 'Method not allowed' });
   }
 
-  const { systemPrompt, userQuery } = req.body;
-  const apiKey = process.env.GEMINI_API_KEY; // Hidden variable
+  const { systemPrompt, userQuery } = req.body || {};
+  if (!userQuery) {
+    return res.status(400).json({ message: 'userQuery required' });
+  }
 
-  const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`;
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) {
+    return res.status(500).json({ message: 'Missing API key' });
+  }
+
+  const url =
+    'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=' +
+    apiKey;
+
+  const payload = {
+    systemInstruction: { parts: [{ text: systemPrompt || '' }] },
+    contents: [{ parts: [{ text: userQuery }] }],
+  };
 
   try {
-    const response = await fetch(apiUrl, {
+    const response = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents: [{ parts: [{ text: userQuery }] }],
-        systemInstruction: { parts: [{ text: systemPrompt }] },
-      })
+      body: JSON.stringify(payload),
     });
 
+    if (!response.ok) {
+      return res.status(500).json({ message: 'Gemini error' });
+    }
+
     const data = await response.json();
-    const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
-    
-    res.status(200).json({ text });
-  } catch (error) {
-    res.status(500).json({ error: 'Failed to communicate with AI' });
+    const text =
+      data.candidates?.[0]?.content?.parts?.[0]?.text ||
+      'No prompt generated.';
+
+    return res.status(200).json({ text });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ message: 'Server error' });
   }
 }
